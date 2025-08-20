@@ -1,0 +1,61 @@
+services:
+  # 後端 API 服務
+  - type: web
+    name: ticker-getter-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: JWT_EXPIRY_HOURS
+        value: 24
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ticker-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: REDIS_HOST
+        fromService:
+          name: ticker-getter-redis
+          type: redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: ticker-getter-redis
+          type: redis
+          property: port
+      - key: FRONTEND_URL
+        value: https://ticker-getter-frontend.onrender.com
+
+  # 前端 Web 服務
+  - type: web
+    name: ticker-getter-frontend
+    env: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://ticker-getter-backend.onrender.com/api/v1
+
+# 數據庫
+databases:
+  - name: ticker-db
+    plan: starter
+    databaseName: ticket_db
+    ipAllowList: [] # 允許所有 IP 訪問
+
+# Redis 緩存
+services:
+  - type: redis
+    name: ticker-getter-redis
+    plan: starter
+    ipAllowList: [] # 允許所有 IP 訪問
