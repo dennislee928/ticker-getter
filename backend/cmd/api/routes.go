@@ -6,6 +6,7 @@ import (
 	"github.com/lipeichen/ticket-getter/internal/controllers"
 	"github.com/lipeichen/ticket-getter/internal/middleware"
 	"github.com/lipeichen/ticket-getter/internal/services"
+	"github.com/lipeichen/ticket-getter/pkg/cache"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -14,11 +15,18 @@ import (
 func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, redisClient *redis.Client) {
 	cfg := config.LoadConfig()
 
+	// 初始化快取
+	redisCache := cache.NewRedisCache(redisClient)
+	eventCache := cache.NewEventCache(redisCache)
+	ticketCache := cache.NewTicketCache(redisCache)
+
 	// 初始化服務
 	authService := services.NewAuthService(db, cfg)
+	ticketService := services.NewTicketService(db, redisClient)
 
 	// 初始化控制器
 	authController := controllers.NewAuthController(authService)
+	ticketController := controllers.NewTicketController(ticketService)
 
 	// 公開路由
 	authRoutes := router.Group("/auth")
@@ -26,6 +34,13 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, redisClient *redis.Cli
 		authRoutes.POST("/register", authController.Register)
 		authRoutes.POST("/login", authController.Login)
 		authRoutes.POST("/refresh", authController.RefreshToken)
+	}
+
+	// 票券可用性檢查（公開路由）
+	ticketRoutes := router.Group("/tickets")
+	{
+		ticketRoutes.GET("/check-availability/:ticket_type_id", ticketController.CheckAvailability)
+		ticketRoutes.GET("/check-fingerprint/:ticket_type_id", ticketController.CheckFingerprint)
 	}
 
 	// 需要認證的路由
@@ -60,13 +75,17 @@ func RegisterRoutes(router *gin.RouterGroup, db *gorm.DB, redisClient *redis.Cli
 		// 訂單相關路由 (後續添加)
 		orderRoutes := authenticatedRoutes.Group("/orders")
 		{
+			// 購買票券 (添加使用者限流中間件)
+			orderRoutes.Use(middleware.UserRateLimiter(redisClient))
+			
 			// TODO: 添加訂單相關路由
 		}
 
-		// 票券相關路由 (後續添加)
-		ticketRoutes := authenticatedRoutes.Group("/tickets")
+		// 票券相關路由
+		ticketAuthRoutes := authenticatedRoutes.Group("/tickets")
 		{
-			// TODO: 添加票券相關路由
+			ticketAuthRoutes.GET("/validate/:ticket_code", ticketController.ValidateTicket)
+			ticketAuthRoutes.POST("/use/:ticket_code", ticketController.UseTicket)
 		}
 	}
 
