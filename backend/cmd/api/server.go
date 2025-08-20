@@ -14,9 +14,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lipeichen/ticket-getter/config"
 	"github.com/lipeichen/ticket-getter/internal/middleware"
+	"github.com/lipeichen/ticket-getter/internal/models"
 	"github.com/redis/go-redis/v9"
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 // Run 啟動 API 服務器
@@ -29,6 +32,17 @@ func Run() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// 連接數據庫
+	db, err := connectDB(cfg)
+	if err != nil {
+		log.Fatalf("無法連接到數據庫: %v", err)
+	}
+	
+	// 自動遷移（僅開發環境）
+	if cfg.Environment == "development" {
+		autoMigrateDB(db)
+	}
+
 	// 初始化 Redis
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
@@ -37,9 +51,9 @@ func Run() {
 	})
 	
 	// 檢查 Redis 連接
-	_, err := redisClient.Ping(context.Background()).Result()
+	_, err = redisClient.Ping(context.Background()).Result()
 	if err != nil {
-		log.Fatalf("無法連接到 Redis: %v", err)
+		log.Printf("無法連接到 Redis: %v，繼續啟動服務但部分功能可能受限", err)
 	}
 
 	// 創建 Gin 引擎
@@ -70,8 +84,8 @@ func Run() {
 		})
 	})
 	
-	// 註冊路由 (之後實現)
-	// RegisterRoutes(apiV1, db, redisClient)
+	// 註冊路由
+	RegisterRoutes(apiV1, db, redisClient)
 
 	// Swagger 文檔
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
@@ -105,4 +119,45 @@ func Run() {
 	}
 	
 	log.Println("服務器已優雅關閉")
+}
+
+// connectDB 連接到 PostgreSQL 數據庫
+func connectDB(cfg *config.Config) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	
+	// 獲取底層 SQL DB 並設置連接池參數
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	
+	// 設置連接池參數
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	
+	return db, nil
+}
+
+// autoMigrateDB 自動遷移數據庫結構
+func autoMigrateDB(db *gorm.DB) {
+	log.Println("正在執行數據庫自動遷移...")
+	
+	err := db.AutoMigrate(
+		&models.User{},
+		&models.Event{},
+		&models.TicketType{},
+		&models.Order{},
+		&models.OrderItem{},
+		&models.Ticket{},
+	)
+	
+	if err != nil {
+		log.Fatalf("數據庫自動遷移失敗: %v", err)
+	}
+	
+	log.Println("數據庫自動遷移完成")
 }
