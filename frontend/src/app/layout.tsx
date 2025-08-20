@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
+import { TlsFingerprintProvider } from '@/components/TlsFingerprintProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,8 +19,10 @@ export default function RootLayout({
   return (
     <html lang="zh-Hant-TW">
       <body className={inter.className}>
-        <Toaster position="top-center" />
-        {children}
+        <TlsFingerprintProvider>
+          <Toaster position="top-center" />
+          {children}
+        </TlsFingerprintProvider>
       </body>
     </html>
   )
